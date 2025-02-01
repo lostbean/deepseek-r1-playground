@@ -1,0 +1,4 @@
+.direnv
+.env
+wandb
+src/.ipynb_checkpoints

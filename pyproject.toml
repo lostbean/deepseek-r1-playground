@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "deepseek-r1-playground"
+version = "0.1.0"
+description = "A Python project using MLX and Jupyter"
+authors = ["Edgar <edgar.gomes@kurtosistech.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+jupyter = "^1.0.0"
+notebook = "^7.0.0"
+mlx = "^0.22.0"
+mlx-lm = "^0.21.1"
+transformers = "^4.48.2"
+datasets = "^3.2.0"
+huggingface-hub = "^0.28.1"
+pandas = "^2.2.3"
+matplotlib = "^3.10.0"
+pathlib = "^1.0.1"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.12.1"
+isort = "^5.13.2"
+flake8 = "^7.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
