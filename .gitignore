@@ -2,3 +2,5 @@
 .env
 wandb
 src/.ipynb_checkpoints
+.ipynb_checkpoints
+.mypy_cache
