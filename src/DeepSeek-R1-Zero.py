@@ -27,6 +27,9 @@ random.seed(SEED)
 np.random.seed(SEED)
 mx.random.seed(SEED)
 
+# MODEL = "mlx-community/Qwen2.5-1.5B-Instruct-4bit"
+MODEL = "Qwen/Qwen2.5-1.5B"
+
 # Load dataset
 dataset = load_dataset("gsm8k", "main", split="train[:20]")
 
@@ -69,18 +72,30 @@ def compute_reward(response_text, expected_answer):
     reward = 0.0
 
     # Check for presence of think tags
-    has_think_start = "<think>" in response_text.lower()
-    has_think_end = "</think>" in response_text.lower()
+    think_start_count = response_text.lower().count("<think>")
+    think_end_count = response_text.lower().count("</think>")
 
     # Check for presence of answer tags
-    has_answer_start = "<answer>" in response_text.lower()
-    has_answer_end = "</answer>" in response_text.lower()
+    answer_start_count = response_text.lower().count("<answer>")
+    answer_end_count = response_text.lower().count("</answer>")
 
     # Format reward (0.4 total for format)
-    if has_think_start and has_think_end:
-        reward += 0.2  # Reward for using think tags
-    if has_answer_start and has_answer_end:
-        reward += 0.2  # Reward for using answer tags
+    if think_start_count > 0 and think_end_count > 0:
+        reward += 0.1  # Reward for using think tags
+    if answer_start_count > 0 and answer_end_count > 0:
+        reward += 0.1  # Reward for using answer tags
+
+    if think_start_count == 1 and think_end_count == 1:
+        reward += 0.1  # Reward for using think tags
+    if answer_start_count == 1 and answer_end_count == 1:
+        reward += 0.1  # Reward for using answer tags
+
+    if answer_start_count > 0 or answer_end_count > 0:
+        lines = response_text.split("\n")
+        repetition = 1 - len(set(lines)) / len(lines)
+        print("Rep: ", repetition)
+        if repetition < 0.1:
+            reward += 0.2
 
     # Extract answer and check accuracy
     answer_pattern = r"<answer>(.*?)</answer>"
@@ -90,9 +105,12 @@ def compute_reward(response_text, expected_answer):
         extracted_answer = match.group(1).strip()
         expected_answer_cleaned = expected_answer.split("####")[-1].strip()
 
+        if all(char.isdigit() for char in extracted_answer):
+            reward += 0.1
+
         # Accuracy reward (0.6 for correct answer)
         if extracted_answer == expected_answer_cleaned:
-            reward += 0.6
+            reward += 0.4
 
     return reward
 
@@ -147,7 +165,7 @@ class DeepSeekTrainer:
         lr=1e-6,
         epsilon=0.2,
         group_size=4,
-        temp=0.5,
+        temp=0.1,
         max_tokens=400,
     ):
         self.model = model
@@ -159,12 +177,13 @@ class DeepSeekTrainer:
         self.max_tokens = max_tokens
 
         print("Loading reference model...")
-        self.reference_model = load("Qwen/Qwen2.5-1.5B")
+        self.reference_model = load(MODEL)
         print("Reference model loaded!")
 
     def train_step(self, dataset):
         total_loss = 0
 
+        print("\n\n>>>> Starting training new step <<<<\n\n")
         for batch_idx, sample in enumerate(tqdm(dataset, desc="Training...")):
             prompt = sample["prompt"]
             correct_answer = sample["response"]
@@ -187,7 +206,10 @@ class DeepSeekTrainer:
 
             old_samples, old_rewards = [], []
 
-            for _ in range(self.group_size):
+            for group_idx in range(self.group_size):
+                print(
+                    f"\n\n=>> Generating actions for batch {batch_idx}, group {group_idx}:"
+                )
                 generated_text = generate(
                     model,
                     tokenizer,
@@ -199,10 +221,14 @@ class DeepSeekTrainer:
                 reward = compute_reward(generated_text, correct_answer)
                 old_samples.append(generated_text)
                 old_rewards.append(reward)
+                print("reward: ", reward)
 
             mean_reward = np.mean(old_rewards)
             std_reward = np.std(old_rewards) if np.std(old_rewards) > 1e-6 else 1e-6
             advantages = [(r - mean_reward) / std_reward for r in old_rewards]
+
+            print("Mean reward: ", mean_reward)
+            print("and advantages : ", advantages)
 
             def loss_fn(sample_id):
                 # Get logits for the generated text
@@ -242,7 +268,7 @@ if __name__ == "__main__":
     # Initialize tokenizer and model
     access_token = os.environ["HF_TOKEN"]
     huggingface_hub.login(access_token)
-    model, tokenizer = load("Qwen/Qwen2.5-1.5B")
+    model, tokenizer = load(MODEL)
 
     # Preprocess dataset
     processed_dataset = preprocess_dataset(dataset)
@@ -260,7 +286,7 @@ if __name__ == "__main__":
     )
 
     # Initialize trainer
-    trainer = DeepSeekTrainer(model, tokenizer, group_size=4, max_tokens=400)
+    trainer = DeepSeekTrainer(model, tokenizer, group_size=4, max_tokens=400, temp=0.2)
 
     # Training loop
     num_epochs = 10
